@@ -1,0 +1,451 @@
+{
+  "name": "Content Repurposer — 1. Scraping (Async)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "id": "5b78299d-5431-470e-8336-42bd7f56b4be",
+      "name": "Schedule (6h)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1504,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apify.com/v2/acts/web.harvester~twitter-scraper/runs",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "YOUR_APIFY_TOKEN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"handles\": [\"levelsio\", \"ZedNilm1\", \"Manu_Sisti\", \"binghott\", \"sweatystartup\"],\n  \"maxItems\": 5\n}",
+        "options": {}
+      },
+      "id": "579216ed-1248-4cdf-bef8-9d0a5f70d6d5",
+      "name": "Apify — Disparar Scraping",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1280,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.apify.com/v2/datasets/{{ $('Apify — Disparar Scraping').item.json.data.defaultDatasetId }}/items",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "YOUR_APIFY_TOKEN"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ce3242bc-8f20-44cf-9800-9c6079f6e4ac",
+      "name": "Apify — Buscar Resultados",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -848,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const tweets = $input.all();\nconst results = [];\n\nfor (const item of tweets) {\n  const t = item.json;\n  if (!t.text) continue;\n\n  const likes = t.likes || 0;\n  const retweets = t.retweets || 0;\n  const replies = t.replies || 0;\n  const quotes = t.quotes || 0;\n\n  const total = likes + (retweets * 2) + (replies * 3) + (quotes * 2);\n  const score = Math.round(total / 10) / 10;\n\n  results.push({\n    json: {\n      tweet_id: String(t.id || ''),\n      content: t.text,\n      url: t.url || '',\n      username: t.url?.split('/')[3] || 'unknown',\n      likes,\n      retweets,\n      replies,\n      engagement_score: score,\n      language: 'en',\n      scraped_at: new Date().toISOString()\n    }\n  });\n}\n\nresults.sort((a, b) => b.json.engagement_score - a.json.engagement_score);\nreturn results;"
+      },
+      "id": "933a83a9-6b51-49b4-897a-66d21b4ea79a",
+      "name": "Calcular Engagement",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -624,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond1",
+              "leftValue": "={{ $json.engagement_score }}",
+              "rightValue": 1,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "567ecab5-e9e3-4f8c-8b46-dd2889a50780",
+      "name": "Filtrar Engajamento Alto",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "source_posts",
+        "returnAll": true
+      },
+      "id": "01515e67-9394-44f9-8637-6a7884b836dd",
+      "name": "Buscar Posts Existentes",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -176,
+        688
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "rlTDbRsiQwzLV0E1",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const newTweets = $('Filtrar Engajamento Alto').all();\nconst existingPosts = $('Buscar Posts Existentes').all();\n\nconst existingIds = new Set(\n  existingPosts.map(p => p.json.tweet_id)\n);\n\nconst uniqueTweets = newTweets.filter(\n  t => !existingIds.has(t.json.tweet_id)\n);\n\nif (uniqueTweets.length === 0) {\n  return [{ json: { message: 'Nenhum tweet novo', count: 0 } }];\n}\n\nreturn uniqueTweets;"
+      },
+      "id": "a025a28e-6984-4010-af17-f389d125a999",
+      "name": "Deduplicar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        48,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond2",
+              "leftValue": "={{ $json.tweet_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4b8bf180-d7e6-464c-be2b-7fee18b4a3be",
+      "name": "Tem Tweets Novos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        272,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "source_posts",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "tweet_id",
+              "fieldValue": "={{ $json.tweet_id }}"
+            },
+            {
+              "fieldId": "content",
+              "fieldValue": "={{ $json.content }}"
+            },
+            {
+              "fieldId": "url",
+              "fieldValue": "={{ $json.url }}"
+            },
+            {
+              "fieldId": "likes",
+              "fieldValue": "={{ $json.likes }}"
+            },
+            {
+              "fieldId": "retweets",
+              "fieldValue": "={{ $json.retweets }}"
+            },
+            {
+              "fieldId": "replies",
+              "fieldValue": "={{ $json.replies }}"
+            },
+            {
+              "fieldId": "engagement_score",
+              "fieldValue": "={{ $json.engagement_score }}"
+            },
+            {
+              "fieldId": "language",
+              "fieldValue": "={{ $json.language }}"
+            },
+            {
+              "fieldId": "is_processed",
+              "fieldValue": "false"
+            }
+          ]
+        }
+      },
+      "id": "195a0d3f-5366-4b1f-be63-ba3b73b67302",
+      "name": "Salvar no Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        480,
+        576
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "rlTDbRsiQwzLV0E1",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "fa092bfb-074d-4c04-abcb-7b4fa646be24",
+      "name": "Sem Tweets Novos",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        480,
+        816
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 360
+      },
+      "id": "c55d2cf3-f634-4372-86fb-c7280a8e7579",
+      "name": "Aguardar 360s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -1056,
+        688
+      ],
+      "webhookId": "08aaf6de-1bc2-4343-b5a0-0e5dd96d1e91"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "=={{ $json.message }}\n\n",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "c68d8b9a-8001-424b-88c2-a9a6ec39b5e0",
+      "name": "Notificar Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        816,
+        576
+      ],
+      "webhookId": "b167ca60-ca17-40de-ad1e-ec645fa14e48",
+      "credentials": {
+        "telegramApi": {
+          "id": "FAwqTJD6KrwWPNNO",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const tweets = $input.all();\nconst total = tweets.length;\n\nconst sorted = tweets.slice().sort((a, b) => {\n  const scoreB = a.json.engagement_score ? a.json.engagement_score : 0;\n  const scoreA = b.json.engagement_score ? b.json.engagement_score : 0;\n  return scoreA - scoreB;\n});\n\nconst topTweets = sorted.slice(0, 3);\n\nlet message = '🔍 Scraping concluído!\\n\\n';\nmessage += '📊 ' + total + ' tweets novos salvos\\n\\n';\nmessage += '🏆 Top 3 por engajamento:\\n\\n';\n\nfor (const t of topTweets) {\n  const parts = t.json.url ? t.json.url.split('/') : [];\n  const username = parts.length > 3 ? parts[3] : 'unknown';\n  const content = t.json.content ? t.json.content.substring(0, 80) : '';\n  const score = t.json.engagement_score ? t.json.engagement_score : 0;\n  const likes = t.json.likes ? t.json.likes : 0;\n  const retweets = t.json.retweets ? t.json.retweets : 0;\n\n  message += '👤 @' + username + '\\n';\n  message += '📝 ' + content + '...\\n';\n  message += '⭐ Score: ' + score + ' | ❤️ ' + likes + ' | 🔄 ' + retweets + '\\n\\n';\n}\n\nreturn [{ json: { message: message } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        576
+      ],
+      "id": "8e5cce54-c864-4bf5-9341-3a97928a7b2c",
+      "name": "Code in JavaScript"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule (6h)": {
+      "main": [
+        [
+          {
+            "node": "Apify — Disparar Scraping",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apify — Disparar Scraping": {
+      "main": [
+        [
+          {
+            "node": "Aguardar 360s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apify — Buscar Resultados": {
+      "main": [
+        [
+          {
+            "node": "Calcular Engagement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular Engagement": {
+      "main": [
+        [
+          {
+            "node": "Filtrar Engajamento Alto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar Engajamento Alto": {
+      "main": [
+        [
+          {
+            "node": "Buscar Posts Existentes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Posts Existentes": {
+      "main": [
+        [
+          {
+            "node": "Deduplicar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deduplicar": {
+      "main": [
+        [
+          {
+            "node": "Tem Tweets Novos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem Tweets Novos?": {
+      "main": [
+        [
+          {
+            "node": "Salvar no Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sem Tweets Novos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar no Supabase": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aguardar 360s": {
+      "main": [
+        [
+          {
+            "node": "Apify — Buscar Resultados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Notificar Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "cae789f5-be7a-41a7-88ee-eca29b3be5ee",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d748221ddd50d7f242a85063f01978d4b2813832abd338f14b5cf63b7aff0236"
+  },
+  "id": "zUrMU6j8mKVoQR6B",
+  "tags": []
+}

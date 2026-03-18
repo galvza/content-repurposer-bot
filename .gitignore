@@ -1,0 +1,20 @@
+# Environment variables
+.env
+.env.*
+
+# Node modules
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# n8n credentials (never commit real creds)
+*.credentials.json
+
+# Logs
+*.log

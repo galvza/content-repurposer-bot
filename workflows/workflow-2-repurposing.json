@@ -1,0 +1,359 @@
+{
+  "name": "Content Repurposer — 2. Repurposing (Gemini)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "id": "eb92b99d-5834-4ee1-8732-b22b68b9934a",
+      "name": "Schedule (6h)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -880,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "source_posts",
+        "limit": 5
+      },
+      "id": "c0bd0afc-c1bd-421a-94ac-2e7cb4d0bccb",
+      "name": "Buscar Posts Não Processados",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -656,
+        112
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "rlTDbRsiQwzLV0E1",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filtra apenas posts não processados\nconst posts = $input.all();\nconst unprocessed = posts.filter(p => p.json.is_processed === false || p.json.is_processed === 'false');\n\nif (unprocessed.length === 0) {\n  return [{ json: { message: 'Nenhum post pra processar', count: 0 } }];\n}\n\nreturn unprocessed;"
+      },
+      "id": "bb7e596a-639f-48ee-a2f3-5579161c75b7",
+      "name": "Filtrar Não Processados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond1",
+              "leftValue": "={{ $json.tweet_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e16ec5b6-5d0e-418c-9e7d-85d1bee744c0",
+      "name": "Tem Posts?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst geminiResponse = input.geminiResponse;\n\nlet text = '';\ntry {\n  text = geminiResponse.candidates[0].content.parts[0].text;\n} catch (e) {\n  return [{ json: { error: 'Gemini não retornou texto', raw: geminiResponse } }];\n}\n\n// Limpa backticks se tiver\nlet cleanText = text.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n\n// Parseia direto — sem fazer replace nenhum\nlet parsed;\ntry {\n  parsed = JSON.parse(cleanText);\n} catch (e) {\n  return [{ json: { error: 'JSON inválido', rawText: cleanText.substring(0, 300) } }];\n}\n\nreturn [{\n  json: {\n    source_post_id: input.id || null,\n    tweet_id: input.tweet_id,\n    original_content: input.content,\n    original_url: input.url,\n    linkedin_post: parsed.linkedin_post?.text || '',\n    linkedin_hashtags: parsed.linkedin_post?.hashtags || [],\n    blog_title: parsed.blog_post?.title || '',\n    blog_meta_description: parsed.blog_post?.meta_description || '',\n    blog_content: parsed.blog_post?.content || '',\n    blog_keywords: parsed.blog_post?.keywords || [],\n    image_prompt: parsed.image_prompt || ''\n  }\n}];"
+      },
+      "id": "3029c754-243b-4bf0-9e1a-a1f3bbf8bc64",
+      "name": "Parsear Resposta Gemini",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "generated_content",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "linkedin_post",
+              "fieldValue": "={{ $json.linkedin_post }}"
+            },
+            {
+              "fieldId": "linkedin_hashtags",
+              "fieldValue": "={{ $json.linkedin_hashtags }}"
+            },
+            {
+              "fieldId": "blog_title",
+              "fieldValue": "={{ $json.blog_title }}"
+            },
+            {
+              "fieldId": "blog_meta_description",
+              "fieldValue": "={{ $json.blog_meta_description }}"
+            },
+            {
+              "fieldId": "blog_content",
+              "fieldValue": "={{ $json.blog_content }}"
+            },
+            {
+              "fieldId": "blog_keywords",
+              "fieldValue": "={{ $json.blog_keywords }}"
+            },
+            {
+              "fieldId": "image_prompt",
+              "fieldValue": "={{ $json.image_prompt }}"
+            },
+            {
+              "fieldId": "image_generated",
+              "fieldValue": "=false "
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "draft"
+            }
+          ]
+        }
+      },
+      "id": "4ba7c5a9-39af-4b77-bab2-3e76dc426261",
+      "name": "Salvar Conteúdo Gerado",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        880,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "rlTDbRsiQwzLV0E1",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "source_posts",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "tweet_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Parsear Resposta Gemini').item.json.tweet_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "is_processed",
+              "fieldValue": "true"
+            }
+          ]
+        }
+      },
+      "id": "74c46c59-bf33-40d6-879d-28d08d6e0c20",
+      "name": "Marcar como Processado",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1104,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "rlTDbRsiQwzLV0E1",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "==✨ Conteúdo gerado!\n\n📌 Post original:\n{{ $('Parsear Resposta Gemini').item.json.original_content.substring(0, 100) }}...\n\n💼 LinkedIn:\n{{ $('Parsear Resposta Gemini').item.json.linkedin_post.substring(0, 200) }}...\n\n📝 Blog: {{ $('Parsear Resposta Gemini').item.json.blog_title }}\n\n🔗 {{ $('Parsear Resposta Gemini').item.json.original_url }}",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "22ac8e98-74ec-499f-b95e-4e010eeb65f1",
+      "name": "Notificar Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1328,
+        0
+      ],
+      "webhookId": "20f4f320-f09c-4bc9-8b40-29c3e597acee",
+      "credentials": {
+        "telegramApi": {
+          "id": "FAwqTJD6KrwWPNNO",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "0848513a-5deb-45a9-b4fb-0a1a142dc339",
+      "name": "Sem Posts Pra Processar",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        0,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const post = $input.first().json;\nconst username = post.url?.split('/')[3] || 'unknown';\n\nconst prompt = `Você é um especialista em marketing de conteúdo e copywriting.\n\nRecebeu o seguinte post do X (Twitter) que teve boa performance:\n\n---\n${post.content}\n---\n\nAutor: @${username}\nLikes: ${post.likes} | RTs: ${post.retweets} | Replies: ${post.replies}\n\nRepurpose esse conteúdo em 3 formatos. Responda APENAS em JSON válido, sem markdown, sem backticks:\n\n{\n  \"linkedin_post\": {\n    \"text\": \"Post para LinkedIn em português BR. Tom profissional mas acessível. Use storytelling. Máximo 1300 caracteres. Inclua CTA no final.\",\n    \"hashtags\": [\"array\", \"de\", \"hashtags\"]\n  },\n  \"blog_post\": {\n    \"title\": \"Título SEO-friendly em português BR\",\n    \"meta_description\": \"Meta description de 155 caracteres para SEO\",\n    \"content\": \"Artigo completo em Markdown, 800-1200 palavras.\",\n    \"keywords\": [\"array\", \"de\", \"keywords\"]\n  },\n  \"image_prompt\": \"Detailed prompt in English for AI image generation. Professional, modern visual. No text in the image.\"\n}`;\n\nconst response = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=YOUR_GEMINI_API_KEY',\n  headers: { 'Content-Type': 'application/json' },\n  body: {\n    contents: [{ parts: [{ text: prompt }] }],\n    generationConfig: {\n      temperature: 0.7,\n      maxOutputTokens: 8192,\n      thinkingConfig: {\n        thinkingBudget: 0\n      }\n    }\n  },\n  json: true\n});\n\nreturn [{ json: { ...post, geminiResponse: response } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "a6719ffc-d45b-48e2-a23a-427c52a8ea83",
+      "name": "Gemini - Gerar Conteúdo"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule (6h)": {
+      "main": [
+        [
+          {
+            "node": "Buscar Posts Não Processados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Posts Não Processados": {
+      "main": [
+        [
+          {
+            "node": "Filtrar Não Processados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar Não Processados": {
+      "main": [
+        [
+          {
+            "node": "Tem Posts?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem Posts?": {
+      "main": [
+        [
+          {
+            "node": "Gemini - Gerar Conteúdo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sem Posts Pra Processar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear Resposta Gemini": {
+      "main": [
+        [
+          {
+            "node": "Salvar Conteúdo Gerado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar Conteúdo Gerado": {
+      "main": [
+        [
+          {
+            "node": "Marcar como Processado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar como Processado": {
+      "main": [
+        [
+          {
+            "node": "Notificar Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini - Gerar Conteúdo": {
+      "main": [
+        [
+          {
+            "node": "Parsear Resposta Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "9840204d-03d2-4213-bc50-c3a9b7259524",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d748221ddd50d7f242a85063f01978d4b2813832abd338f14b5cf63b7aff0236"
+  },
+  "id": "MknhI3Ys6BsrwyGD",
+  "tags": []
+}
